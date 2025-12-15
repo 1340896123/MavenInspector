@@ -17,7 +17,7 @@ public class MavenInspectorTools
 
     [McpServerTool(Name = "analyze_pom_dependencies")]
     [Description("解析 pom.xml 获取所有依赖 jar 包的本地路径")]
-    public async Task<DependencyScanResult> AnalyzePomDependencies(string pomPath)
+    public async Task<DependencyScanResult> AnalyzePomDependencies([Description("pom.xml 文件的绝对路径")] string pomPath)
     {
         if (!File.Exists(pomPath))
         {
@@ -147,7 +147,7 @@ public class MavenInspectorTools
     }
     [McpServerTool(Name = "search_class_in_dependencies")]
     [Description("在所有依赖包中搜索指定的类名")]
-    public List<ClassLocation> SearchClass(string pomPath, string classNameQuery)
+    public List<ClassLocation> SearchClass([Description("pom.xml 文件的绝对路径")] string pomPath, [Description("要搜索的类名（支持部分匹配）")] string classNameQuery)
     {
         // 1. 从缓存获取 JAR 列表
         if (!_cache.TryGetValue(pomPath, out var jarPaths))
@@ -202,7 +202,7 @@ public class MavenInspectorTools
 
     [McpServerTool(Name = "inspect_java_class")]
     [Description("读取特定类的详细结构（方法、字段、签名）")]
-    public async Task<ClassDetail> InspectClass(string jarPath, string fullClassName)
+    public async Task<ClassDetail> InspectClass([Description("jar 包的绝对路径")] string jarPath, [Description("完整的类名（如 com.example.MyClass）")] string fullClassName)
     {
         // 1. 构建 javap 命令
         var args = $"-p -s -cp \"{jarPath}\" {fullClassName}";
