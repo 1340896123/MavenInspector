@@ -7,6 +7,12 @@ public class DependencyScanResult
     public string? ProjectRoot { get; set; }
     public List<string> JarPaths { get; set; } = new();
     public string? Error { get; set; }
+
+    public override string ToString()
+    {
+        if (!string.IsNullOrEmpty(Error)) return $"Error: {Error}";
+        return $"Success: {JarPaths.Count} jars found in {ProjectRoot}";
+    }
 }
 
 public class ClassLocation

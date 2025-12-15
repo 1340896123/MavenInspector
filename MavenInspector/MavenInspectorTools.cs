@@ -31,33 +31,47 @@ public class MavenInspectorTools
         if (string.IsNullOrEmpty(localRepo)) 
             return new DependencyScanResult { Error = "Could not determine local maven repository path." };
 
-        // 修正：使用 ArgumentList 确保参数正确传递
-        var processInfo = new ProcessStartInfo
-        {
-            FileName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "mvn.cmd" : "mvn",
-            WorkingDirectory = workingDir,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-        processInfo.ArgumentList.Add("org.cyclonedx:cyclonedx-maven-plugin:makeAggregateBom");
+        // 使用 WinCMDHelper 执行 Maven 命令
+        // 注意：WinCMDHelper.RunDosCmd 内部使用 cmd.exe，因此需要拼接 cd 命令和 mvn 命令
+        var mvnCommand = "mvn.cmd -B org.cyclonedx:cyclonedx-maven-plugin:makeAggregateBom";
+        var cmdArgs = $"cd /d \"{workingDir}\" && {mvnCommand}";
 
         try
         {
-            var process = Process.Start(processInfo);
-            if (process == null) return new DependencyScanResult { Error = "Failed to start maven process" };
+            // WinCMDHelper 是同步方法，但在 async 方法中调用主要为了兼容签名
+            // 为了防止阻塞主线程太久（虽然是在 Task 中），可以直接调用
+            var output = WinCMDHelper.GetInstance().RunDosCmd("", cmdArgs);
 
-            await process.WaitForExitAsync();
-
-            if (process.ExitCode != 0)
+            // WinCMDHelper 返回 "Err:" 开头表示 stderr 有内容
+            // 注意：Maven 有时会输出非致命警告到 stderr，导致这里被误判为错误。
+            // 但根据 WinCMDHelper 的逻辑，只要 stderr 不为空就返回 Err:...
+            // 我们先按报错处理，如果用户反馈有问题再调整。
+            if (output.StartsWith("Err:"))
             {
-                var error = await process.StandardError.ReadToEndAsync();
-                return new DependencyScanResult { Error = $"Maven failed with exit code {process.ExitCode}: {error}" };
+                 // 如果只是警告，可能仍然生成了文件，尝试检查文件是否存在？
+                 // 但通常 Err 表示失败。我们把输出都放进去。
+                 // 稍微放宽一点：如果 bom.xml 存在且不仅是警告？
+                 // 暂时还是认为 WinCMDHelper 的 Err 就是失败。
+                 // 防止误判，检查一下 bom.xml 是否生成
+                 var bomCheck = Path.Combine(workingDir, "target", "bom.xml");
+                 if (!File.Exists(bomCheck))
+                 {
+                     return new DependencyScanResult 
+                     { 
+                         Error = $"Maven execution returned error output.\nCmd: {cmdArgs}\nOutput: {output}" 
+                     };
+                 }
+                 // 如果 bom.xml 存在，可能是警告引发的 "Err:"，尝试继续解析
             }
 
             var bomPath = Path.Combine(workingDir, "target", "bom.xml");
-            if (!File.Exists(bomPath)) return new DependencyScanResult { Error = "Build failed, bom.xml not found" };
+            if (!File.Exists(bomPath)) 
+            {
+                return new DependencyScanResult 
+                { 
+                    Error = $"Build failed or bom.xml not found at {bomPath}.\nOutput: {output}" 
+                };
+            }
 
             var jarPaths = new List<string>();
             try 
@@ -112,30 +126,16 @@ public class MavenInspectorTools
     {
         if (!string.IsNullOrEmpty(_localRepoPath)) return _localRepoPath;
 
-        var processInfo = new ProcessStartInfo
-        {
-            FileName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "mvn.cmd" : "mvn",
-            WorkingDirectory = workingDir,
-            Arguments = "help:evaluate -Dexpression=settings.localRepository -q -DforceStdout",
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
+        var cmdArgs = $"cd /d \"{workingDir}\" && mvn.cmd help:evaluate -Dexpression=settings.localRepository -q -DforceStdout";
 
         try 
         {
-            var process = Process.Start(processInfo);
-            if (process != null)
-            {
-                var output = await process.StandardOutput.ReadToEndAsync();
-                await process.WaitForExitAsync();
+            var output = WinCMDHelper.GetInstance().RunDosCmd("", cmdArgs);
 
-                if (process.ExitCode == 0 && !string.IsNullOrWhiteSpace(output))
-                {
-                    _localRepoPath = output.Trim();
-                    return _localRepoPath;
-                }
+            if (!output.StartsWith("Err:") && !string.IsNullOrWhiteSpace(output))
+            {
+                _localRepoPath = output.Trim();
+                return _localRepoPath;
             }
         }
         catch {}
@@ -207,24 +207,16 @@ public class MavenInspectorTools
         // 1. 构建 javap 命令
         var args = $"-p -s -cp \"{jarPath}\" {fullClassName}";
         
-        var processInfo = new ProcessStartInfo
-        {
-            FileName = "javap", 
-            Arguments = args,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-
         try
         {
             // 2. 执行并获取输出
-            var process = Process.Start(processInfo);
-            if (process == null) return new ClassDetail { Name = fullClassName, Type = "error" };
+            // 使用 WinCMDHelper
+            var output = WinCMDHelper.GetInstance().RunDosCmd("", "javap " + args);
 
-            var output = await process.StandardOutput.ReadToEndAsync();
-            await process.WaitForExitAsync();
+            if (output.StartsWith("Err:"))
+            {
+                 return new ClassDetail { Name = fullClassName, Type = $"Error: {output}" };
+            }
 
             // 3. 解析 javap 的文本输出
             return ParseJavapOutput(output, fullClassName);
