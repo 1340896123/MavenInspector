@@ -97,7 +97,14 @@ public class MavenInspectorTools
             return new DependencyScanResult { Error = "Could not determine local maven repository path." };
 
         // 使用 WinCMDHelper 执行 Maven 命令 (PowerShell)
-        var mvnCommand = "mvn -B org.cyclonedx:cyclonedx-maven-plugin:makeAggregateBom";
+        // Check environment variables for custom mvn path and settings
+        var mvnPath = Environment.GetEnvironmentVariable("MavenInspectorMavnPath");
+        var mvnCmd = string.IsNullOrWhiteSpace(mvnPath) ? "mvn" : $"& '{mvnPath}'"; // Use call operator for paths
+
+        var settingsPath = Environment.GetEnvironmentVariable("MavenInspectorMavnSettingPath");
+        var settingsArg = string.IsNullOrWhiteSpace(settingsPath) ? "" : $" -s '{settingsPath}'";
+
+        var mvnCommand = $"{mvnCmd}{settingsArg} -B org.cyclonedx:cyclonedx-maven-plugin:makeAggregateBom";
         // Use Set-Location and ; for PowerShell
         var cmdArgs = $"Set-Location -Path '{workingDir}'; {mvnCommand}";
 
@@ -205,7 +212,22 @@ public class MavenInspectorTools
     {
         if (!string.IsNullOrEmpty(_localRepoPath)) return _localRepoPath;
 
-        var cmdArgs = $"Set-Location -Path '{workingDir}'; mvn -B help:effective-settings";
+        // 1. Check Env Var for local repo override
+        var envRepoPath = Environment.GetEnvironmentVariable("MavenInspectorMavnlocalRepositoryPath");
+        if (!string.IsNullOrWhiteSpace(envRepoPath))
+        {
+            _localRepoPath = envRepoPath;
+            return _localRepoPath;
+        }
+
+        // 2. Fallback to asking Maven
+        var mvnPath = Environment.GetEnvironmentVariable("MavenInspectorMavnPath");
+        var mvnCmd = string.IsNullOrWhiteSpace(mvnPath) ? "mvn" : $"& '{mvnPath}'";
+
+        var settingsPath = Environment.GetEnvironmentVariable("MavenInspectorMavnSettingPath");
+        var settingsArg = string.IsNullOrWhiteSpace(settingsPath) ? "" : $" -s '{settingsPath}'";
+        
+        var cmdArgs = $"Set-Location -Path '{workingDir}'; {mvnCmd}{settingsArg} -B help:effective-settings";
 
         try
         {
