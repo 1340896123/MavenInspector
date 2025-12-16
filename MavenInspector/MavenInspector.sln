@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 18
+VisualStudioVersion = 18.3.11310.294 d18.3
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MavenInspector", "MavenInspector.csproj", "{20CB1D9A-3859-298C-6CFC-EF741F2F8231}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{20CB1D9A-3859-298C-6CFC-EF741F2F8231}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{20CB1D9A-3859-298C-6CFC-EF741F2F8231}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{20CB1D9A-3859-298C-6CFC-EF741F2F8231}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{20CB1D9A-3859-298C-6CFC-EF741F2F8231}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {6C59A3FC-CAD4-4745-B0C8-C852735A2728}
+	EndGlobalSection
+EndGlobal

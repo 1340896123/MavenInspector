@@ -129,6 +129,53 @@ namespace MavenInspector
             }
         }
 
+        public string RunPowerShell(string scriptText)
+        {
+            using (Process myProcess = new Process())
+            {
+                try
+                {
+                    myProcess.StartInfo.UseShellExecute = false;
+                    myProcess.StartInfo.FileName = "powershell.exe";
+                    myProcess.StartInfo.WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden;
+                    myProcess.StartInfo.CreateNoWindow = true;
+                    // -Command - tells PowerShell to read the command from StandardInput
+                    myProcess.StartInfo.Arguments = "-NoLogo -NoProfile -ExecutionPolicy Bypass -Command -";
+                    myProcess.StartInfo.RedirectStandardInput = true;
+                    myProcess.StartInfo.RedirectStandardError = true;
+                    myProcess.StartInfo.RedirectStandardOutput = true;
+
+                    myProcess.Start();
+
+                    // Write command to stdin
+                    myProcess.StandardInput.WriteLine(scriptText);
+                    myProcess.StandardInput.WriteLine("exit");
+                    myProcess.StandardInput.Close(); // Close input to signal end of commands
+
+                    // Read output and error asynchronously to avoid deadlocks
+                    // (If we wait for exit before reading, and the buffer fills up, it deadlocks)
+                    var outputTask = myProcess.StandardOutput.ReadToEndAsync();
+                    var errorTask = myProcess.StandardError.ReadToEndAsync();
+
+                    // Wait for the process to exit
+                    myProcess.WaitForExit();
+
+                    // Ensure we have all the output
+                    Task.WaitAll(outputTask, errorTask);
+
+                    string output = outputTask.Result;
+                    string result = errorTask.Result;
+
+                    return string.IsNullOrEmpty(result) ? output : "Err:" + result;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine(ex.Message);
+                    return ex.Message;
+                }
+            }
+        }
+
         void myProcess_Exited(object sender, EventArgs e)
         {
             //throw new NotImplementedException();
