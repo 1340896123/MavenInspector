@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Threading;
 using System.Security.Cryptography;
 using System.Text.Json;
 
@@ -35,13 +36,27 @@ public class JarCacheManager
             {
                 try
                 {
-                    var json = File.ReadAllText(_cacheFilePath);
-                    var list = JsonSerializer.Deserialize<List<JarAnalysisInfo>>(json);
-                    if (list != null)
+                    using (var mutex = new Mutex(false, "Global\\MavenInspector_JarCache_Mutex"))
                     {
-                        foreach (var item in list)
+                        try
                         {
-                            _memoryCache[item.JarPath] = item;
+                            mutex.WaitOne(3000);
+                            if (File.Exists(_cacheFilePath))
+                            {
+                                var json = File.ReadAllText(_cacheFilePath);
+                                var list = JsonSerializer.Deserialize<List<JarAnalysisInfo>>(json);
+                                if (list != null)
+                                {
+                                    foreach (var item in list)
+                                    {
+                                        _memoryCache[item.JarPath] = item;
+                                    }
+                                }
+                            }
+                        }
+                        finally
+                        {
+                            mutex.ReleaseMutex();
                         }
                     }
                 }
@@ -56,9 +71,21 @@ public class JarCacheManager
         {
             try
             {
-                var list = _memoryCache.Values.ToList();
-                var json = JsonSerializer.Serialize(list);
-                File.WriteAllText(_cacheFilePath, json);
+                using (var mutex = new Mutex(false, "Global\\MavenInspector_JarCache_Mutex"))
+                {
+                    try
+                    {
+                        mutex.WaitOne(3000);
+                        var list = _memoryCache.Values.ToList();
+                        var json = JsonSerializer.Serialize(list);
+                        File.WriteAllText(_cacheFilePath, json);
+                    }
+                    finally
+                    {
+                        mutex.ReleaseMutex();
+                    }
+                }
+
             }
             catch { }
         }

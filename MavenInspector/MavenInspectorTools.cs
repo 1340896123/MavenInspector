@@ -5,6 +5,7 @@ using System.IO.Compression;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Xml.Linq;
 
 namespace MavenInspector;
@@ -36,15 +37,26 @@ public class MavenInspectorTools
     {
         try
         {
-            if (File.Exists(_cacheFilePath))
+            using (var mutex = new Mutex(false, "Global\\MavenInspector_DependencyCache_Mutex")) 
             {
-                var json = File.ReadAllText(_cacheFilePath);
-                _cache = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, CachedDependencyInfo>>(json) 
-                         ?? new Dictionary<string, CachedDependencyInfo>();
-            }
-            else
-            {
-                _cache = new Dictionary<string, CachedDependencyInfo>();
+               try
+               { 
+                   mutex.WaitOne(3000); // 3 sec timeout
+                   if (File.Exists(_cacheFilePath))
+                   {
+                       var json = File.ReadAllText(_cacheFilePath);
+                       _cache = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, CachedDependencyInfo>>(json) 
+                                ?? new Dictionary<string, CachedDependencyInfo>();
+                   }
+                   else
+                   {
+                       _cache = new Dictionary<string, CachedDependencyInfo>();
+                   }
+               }
+               finally
+               {
+                   mutex.ReleaseMutex();
+               }
             }
         }
         catch
@@ -57,8 +69,19 @@ public class MavenInspectorTools
     {
         try
         {
-            var json = System.Text.Json.JsonSerializer.Serialize(_cache);
-            File.WriteAllText(_cacheFilePath, json);
+            using (var mutex = new Mutex(false, "Global\\MavenInspector_DependencyCache_Mutex"))
+            {
+                try
+                {
+                    mutex.WaitOne(3000);
+                    var json = System.Text.Json.JsonSerializer.Serialize(_cache);
+                    File.WriteAllText(_cacheFilePath, json);
+                }
+                finally
+                {
+                    mutex.ReleaseMutex();
+                }
+            }
         }
         catch { /* Ignore save errors */ }
     }
