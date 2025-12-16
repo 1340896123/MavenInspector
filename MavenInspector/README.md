@@ -52,10 +52,7 @@ MavenInspector 提供以下 MCP 工具 (Tools)：
 - `MavenInspectorMavnSettingPath`: 指定 Maven `settings.xml` 文件的路径（默认为空，使用默认设置）。
 - `MavenInspectorMavnlocalRepositoryPath`: 指定 Maven 本地仓库路径（若未设置，尝试自动检测或使用 `~/.m2/repository`）。
 
-## 使用说明 (DNX / Dotnet CLI)
-
-> **关于 DNX 的说明**: 
-> 您提到的 **DNX** (Dot Net Execution Environment) 是 .NET Core 早期的运行环境名称，现已被废弃。目前 .NET 项目的标准运行方式是使用 **.NET CLI (`dotnet`)**。
+## 使用说明 (Dotnet CLI)
 
 ### 1. 编译与运行
 
