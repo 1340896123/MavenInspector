@@ -1,0 +1,18 @@
+{
+  "servers": {
+    "MavenInspector": {
+      "type": "stdio",
+      "command": "dotnet",
+      "args": [
+        "run",
+        "--project",
+        "MavenInspector.csproj"
+      ],
+      "env": {
+        "MavenInspectorMavnPath": "",
+        "MavenInspectorMavnSettingPath": "",
+        "MavenInspectorMavnlocalRepositoryPath": ""
+      }
+    }
+  }
+}

@@ -7,7 +7,7 @@
 		<Nullable>enable</Nullable>
 		<IsPackable>true</IsPackable>
 		<PackageVersion>1.0.0</PackageVersion>
-		<PackageId>Jieok.MavenInspector</PackageId>
+		<PackageId>Jieok.MavenInspectorMcpServer</PackageId>
 	</PropertyGroup>
 
 	<ItemGroup>
