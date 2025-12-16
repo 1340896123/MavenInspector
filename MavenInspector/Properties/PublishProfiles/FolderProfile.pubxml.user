@@ -3,7 +3,7 @@
 <Project>
   <PropertyGroup>
     <_PublishTargetUrl>D:\Source\MavenExplore\MavenInspector\bin\Release\net10.0\publish\</_PublishTargetUrl>
-    <History>True|2025-12-16T06:18:05.3731880Z||;False|2025-12-16T14:17:49.1510562+08:00||;True|2025-12-16T09:57:44.6594270+08:00||;True|2025-12-15T17:05:03.6088376+08:00||;True|2025-12-15T17:01:01.4735204+08:00||;</History>
+    <History>True|2025-12-16T06:41:00.2784298Z||;True|2025-12-16T14:40:55.4671349+08:00||;False|2025-12-16T14:40:24.7149558+08:00||;True|2025-12-16T14:18:05.3731880+08:00||;False|2025-12-16T14:17:49.1510562+08:00||;True|2025-12-16T09:57:44.6594270+08:00||;True|2025-12-15T17:05:03.6088376+08:00||;True|2025-12-15T17:01:01.4735204+08:00||;</History>
     <LastFailureDetails />
   </PropertyGroup>
 </Project>
