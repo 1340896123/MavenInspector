@@ -91,7 +91,8 @@ dotnet run --project MavenInspector
       "env": {
         "MavenInspectorMavnPath": "",
         "MavenInspectorMavnSettingPath": "",
-        "MavenInspectorMavnlocalRepositoryPath": ""
+        "MavenInspectorMavnlocalRepositoryPath": "",
+        "MavenInspectorFernflowerPath":""
       }
     }
   }

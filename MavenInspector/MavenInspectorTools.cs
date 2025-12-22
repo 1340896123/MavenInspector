@@ -37,26 +37,26 @@ public class MavenInspectorTools
     {
         try
         {
-            using (var mutex = new Mutex(false, "Global\\MavenInspector_DependencyCache_Mutex")) 
+            using (var mutex = new Mutex(false, "Global\\MavenInspector_DependencyCache_Mutex"))
             {
-               try
-               { 
-                   mutex.WaitOne(3000); // 3 sec timeout
-                   if (File.Exists(_cacheFilePath))
-                   {
-                       var json = File.ReadAllText(_cacheFilePath);
-                       _cache = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, CachedDependencyInfo>>(json) 
-                                ?? new Dictionary<string, CachedDependencyInfo>();
-                   }
-                   else
-                   {
-                       _cache = new Dictionary<string, CachedDependencyInfo>();
-                   }
-               }
-               finally
-               {
-                   mutex.ReleaseMutex();
-               }
+                try
+                {
+                    mutex.WaitOne(3000); // 3 sec timeout
+                    if (File.Exists(_cacheFilePath))
+                    {
+                        var json = File.ReadAllText(_cacheFilePath);
+                        _cache = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, CachedDependencyInfo>>(json)
+                                 ?? new Dictionary<string, CachedDependencyInfo>();
+                    }
+                    else
+                    {
+                        _cache = new Dictionary<string, CachedDependencyInfo>();
+                    }
+                }
+                finally
+                {
+                    mutex.ReleaseMutex();
+                }
             }
         }
         catch
@@ -249,7 +249,7 @@ public class MavenInspectorTools
 
         var settingsPath = Environment.GetEnvironmentVariable("MavenInspectorMavnSettingPath");
         var settingsArg = string.IsNullOrWhiteSpace(settingsPath) ? "" : $" -s '{settingsPath}'";
-        
+
         var cmdArgs = $"Set-Location -Path '{workingDir}'; {mvnCmd}{settingsArg} -B help:effective-settings";
 
         try
@@ -278,7 +278,7 @@ public class MavenInspectorTools
     {
         // 1. 从缓存获取 JAR 列表
         List<string> jarPaths;
-        
+
         bool needsAnalyze = false;
         if (!_cache.TryGetValue(pomPath, out var cachedInfo))
         {
@@ -286,23 +286,23 @@ public class MavenInspectorTools
         }
         else
         {
-             try
-             {
-                 if (File.GetLastWriteTimeUtc(pomPath) != cachedInfo.LastModified)
-                 {
-                     needsAnalyze = true;
-                 }
-             }
-             catch { needsAnalyze = true; }
+            try
+            {
+                if (File.GetLastWriteTimeUtc(pomPath) != cachedInfo.LastModified)
+                {
+                    needsAnalyze = true;
+                }
+            }
+            catch { needsAnalyze = true; }
         }
 
         if (needsAnalyze)
         {
-             var task = AnalyzePomDependenciesByPom(pomPath);
-             task.Wait();
-             var res = task.Result;
-             if (res.JarPaths == null || res.JarPaths.Count == 0) return new List<ClassLocation>();
-             jarPaths = res.JarPaths;
+            var task = AnalyzePomDependenciesByPom(pomPath);
+            task.Wait();
+            var res = task.Result;
+            if (res.JarPaths == null || res.JarPaths.Count == 0) return new List<ClassLocation>();
+            jarPaths = res.JarPaths;
         }
         else
         {
@@ -325,50 +325,50 @@ public class MavenInspectorTools
         {
             simpleContains = classNameQuery;
         }
-        
+
         // 2. 遍历每一个 JAR 文件 (使用 JarCacheManager)
         Parallel.ForEach(jarPaths, (jarPath, state) =>
         {
-             if (state.IsStopped) return;
-             
-             // 获取或分析 JAR (自动处理缓存)
-             var info = JarCacheManager.GetInstance().GetOrAnalyze(jarPath);
-             if (info == null) return;
+            if (state.IsStopped) return;
 
-             foreach (var cls in info.Classes)
-             {
-                 if (state.IsStopped) break;
-                 
-                 // 匹配逻辑
-                 bool match = false;
-                 if (regex != null)
-                 {
-                     match = regex.IsMatch(cls.FullName) || regex.IsMatch(cls.SimpleName);
-                 }
-                 else
-                 {
-                     match = cls.FullName.Contains(simpleContains, StringComparison.OrdinalIgnoreCase);
-                 }
+            // 获取或分析 JAR (自动处理缓存)
+            var info = JarCacheManager.GetInstance().GetOrAnalyze(jarPath);
+            if (info == null) return;
 
-                 if (match)
-                 {
-                     lock (lockObj)
-                     {
-                         if (results.Count >= 20)
-                         {
-                             state.Stop();
-                             break;
-                         }
+            foreach (var cls in info.Classes)
+            {
+                if (state.IsStopped) break;
 
-                         results.Add(new ClassLocation
-                         {
-                             SimpleName = cls.SimpleName,
-                             FullName = cls.FullName,
-                             JarPath = jarPath
-                         });
-                     }
-                 }
-             }
+                // 匹配逻辑
+                bool match = false;
+                if (regex != null)
+                {
+                    match = regex.IsMatch(cls.FullName) || regex.IsMatch(cls.SimpleName);
+                }
+                else
+                {
+                    match = cls.FullName.Contains(simpleContains, StringComparison.OrdinalIgnoreCase);
+                }
+
+                if (match)
+                {
+                    lock (lockObj)
+                    {
+                        if (results.Count >= 20)
+                        {
+                            state.Stop();
+                            break;
+                        }
+
+                        results.Add(new ClassLocation
+                        {
+                            SimpleName = cls.SimpleName,
+                            FullName = cls.FullName,
+                            JarPath = jarPath
+                        });
+                    }
+                }
+            }
         });
 
         // 只要有任何更新，保存一次 Jar 缓存
@@ -377,75 +377,176 @@ public class MavenInspectorTools
         return results;
     }
 
+
+    public async Task<ClassDetail> InspectClass(string jarPath, string fullClassName)
+    {
+        // 1. 尝试查找源码 JAR
+        string? sourceCode = null;
+        try
+        {
+            var sourceJarPath = jarPath.Replace(".jar", "-sources.jar");
+            if (File.Exists(sourceJarPath))
+            {
+                using var zip = ZipFile.OpenRead(sourceJarPath);
+                var entryName = fullClassName.Replace('.', '/') + ".java";
+                var entry = zip.GetEntry(entryName);
+                if (entry != null)
+                {
+                    using var stream = entry.Open();
+                    using var reader = new StreamReader(stream);
+                    sourceCode = await reader.ReadToEndAsync();
+                }
+            }
+        }
+        catch { /* 忽略源码查找错误 */ }
+
+
+        // 2. 尝试使用 Fernflower 反编译
+        if (sourceCode == null)
+        {
+            try
+            {
+                var decompilerPath = Environment.GetEnvironmentVariable("MavenInspectorFernflowerPath");
+                if (!string.IsNullOrWhiteSpace(decompilerPath) && File.Exists(decompilerPath))
+                {
+                    sourceCode = await DecompileWithFernflower(decompilerPath, jarPath, fullClassName);
+                }
+            }
+            catch { /* Ignore decompile errors */ }
+        }
+
+
+        if (sourceCode != null)
+        {
+            return ParseClassDetailFromSource(sourceCode, fullClassName);
+        }
+
+        return new ClassDetail
+        {
+            Name = fullClassName,
+            Type = "Error: Source code could not be retrieved."
+        };
+
+    }
+
+
+
     [McpServerTool(Name = "inspect_java_class")]
     [Description("读取特定类的详细结构（方法、字段、签名）")]
-    public async Task<ClassDetail> InspectClass([Description("jar 包的绝对路径")] string jarPath, [Description("完整的类名（如 com.example.MyClass）")] string fullClassName)
+    public async Task<string> InspectClassSource([Description("jar 包的绝对路径")] string jarPath, [Description("完整的类名（如 com.example.MyClass）")] string fullClassName)
     {
-        // 1. 构建 javap 命令
-        var args = $"-p -s -cp \"{jarPath}\" {fullClassName}";
+        var res = await InspectClass(jarPath, fullClassName);
+        return res.RawClassData!;
+    }
+
+    private async Task<string?> DecompileWithFernflower(string fernflowerPath, string jarPath, string fullClassName)
+    {
+        // Fernflower usage: java -jar fernflower.jar <source> <destination>
+        // source can be a file or directory. destination must be a directory.
+        // To avoid decompiling the entire jar, we should extract the specific .class file first.
+
+        var tempDir = Path.Combine(Path.GetTempPath(), "MavenInspector", Guid.NewGuid().ToString());
+        Directory.CreateDirectory(tempDir);
 
         try
         {
-            // 2. 执行并获取输出
-            // 使用 WinCMDHelper
-            var output = WinCMDHelper.GetInstance().RunPowerShell("javap " + args);
+            var classFileRelativePath = fullClassName.Replace('.', '/') + ".class";
+            var tempClassFile = Path.Combine(tempDir, "cls", classFileRelativePath);
+            var tempOutputDir = Path.Combine(tempDir, "src");
+            Directory.CreateDirectory(tempOutputDir);
+            Directory.CreateDirectory(Path.GetDirectoryName(tempClassFile)!);
 
-            if (output.StartsWith("Err:"))
+            // Extract .class file
+            using (var zip = ZipFile.OpenRead(jarPath))
             {
-                return new ClassDetail { Name = fullClassName, Type = $"Error: {output}" };
+                var entry = zip.GetEntry(classFileRelativePath);
+                if (entry == null) return null;
+                entry.ExtractToFile(tempClassFile);
             }
 
-            // 3. 解析 javap 的文本输出
-            return ParseJavapOutput(output, fullClassName);
+            // Run Fernflower
+            // java -jar fernflower.jar <classFile> <outputDir>
+            var args = $" -jar \"{fernflowerPath}\" \"{tempClassFile}\" \"{tempOutputDir}\"";
+            var output = WinCMDHelper.GetInstance().RunPowerShell("java " + args);
+
+            // Fernflower usually creates a .java file in the output dir
+            // The filename might be SimpleName.java
+            var javaFiles = Directory.GetFiles(tempOutputDir, "*.java", SearchOption.AllDirectories);
+            if (javaFiles.Length > 0)
+            {
+                return await File.ReadAllTextAsync(javaFiles[0]);
+            }
+
+            return null;
+        }
+        catch
+        {
+            return null;
+        }
+        finally
+        {
+            try { Directory.Delete(tempDir, true); } catch { }
+        }
+    }
+
+    private ClassDetail ParseClassDetailFromSource(string sourceCode, string className)
+    {
+        var detail = new ClassDetail
+        {
+            Name = className,
+            RawClassData = sourceCode
+        };
+
+        try
+        {
+            // 简单移除注释
+            string cleanCode = Regex.Replace(sourceCode, @"/\*.*?\*/", "", RegexOptions.Singleline);
+            cleanCode = Regex.Replace(cleanCode, @"//.*$", "", RegexOptions.Multiline);
+
+            // Regex 提取方法签名
+            // 匹配： (修饰符...) 返回值 方法名(参数) ... {
+            // 注意：构造函数没有返回值，所以需要考虑这种情况
+            // Regex simplified:
+            // (modifiers) -> ((public|protected|private|static|final|native|synchronized|abstract|transient)\s+)*
+            // (type + name) -> [\w<>\[\]]+\s+(\w+)   <-- method with return type
+            //               OR (\w+)                  <-- constructor (name same as class)
+            // This is hard to perfect with regex, let's try a best-effort approach identifying method-like patterns ending in { or ;
+
+            // 改进：提取所有看起来像方法定义的行
+            // 排除 if/for/while/switch/catch
+            var methodRegex = new Regex(@"^\s*((public|protected|private|static|final|native|synchronized|abstract|transient)\s+)+[\w\<\>\[\]\s]+\(.*\)\s*(throws\s+[\w,\s]+)?\s*\{", RegexOptions.Multiline);
+
+            foreach (Match match in methodRegex.Matches(cleanCode))
+            {
+                var sig = match.Value.Trim().TrimEnd('{').Trim();
+                // 排除控制流
+                if (sig.StartsWith("if") || sig.StartsWith("for") || sig.StartsWith("while") || sig.StartsWith("switch") || sig.StartsWith("catch")) continue;
+
+                detail.Methods.Add(new JavaMethodInfo
+                {
+                    Signature = sig,
+                    RawMethodData = match.Value
+                });
+            }
+
+            // Regex 提取字段
+            // 排除 package, import
+            var fieldRegex = new Regex(@"^\s*((public|protected|private|static|final|volatile|transient)\s+)+[\w\<\>\[\]]+\s+(\w+)\s*(=[^;]+)?;", RegexOptions.Multiline);
+            foreach (Match match in fieldRegex.Matches(cleanCode))
+            {
+                detail.Fields.Add(match.Value.Trim());
+            }
+
         }
         catch (Exception ex)
         {
-            return new ClassDetail { Name = fullClassName, Type = $"Error: {ex.Message}" };
+            detail.Fields.Add($"Error parsing source: {ex.Message}");
         }
-    }
 
-    private ClassDetail ParseJavapOutput(string output, string className)
-    {
-        var detail = new ClassDetail { Name = className };
-        var lines = output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-
-        foreach (var line in lines)
-        {
-            var trimLine = line.Trim();
-            if (string.IsNullOrWhiteSpace(trimLine)) continue;
-            if (trimLine.StartsWith("Compiled from")) continue;
-
-            // Simple heuristics
-            if (trimLine.Contains(" class ") || trimLine.Contains(" interface ") || trimLine.Contains(" enum "))
-            {
-                if (trimLine.EndsWith("{"))
-                {
-                    // Attempt to grab package or other details if needed
-                    // But strictly speaking javap output is:
-                    // public class org.package.Name {
-                }
-            }
-
-            // 识别方法
-            // Typical line: public int methodName(int, int);
-            // With -s (signatures), the next line is usually "descriptor: ..."
-            if (trimLine.Contains("(") && trimLine.Contains(")") && !trimLine.Contains("static {};") && !trimLine.StartsWith("descriptor:"))
-            {
-                detail.Methods.Add(new JavaMethodInfo
-                {
-                    Signature = trimLine.TrimEnd(';', '{'),
-                });
-            }
-            // 识别字段
-            else if (trimLine.Contains(";") && !trimLine.Contains("(") && !trimLine.StartsWith("descriptor:") && !trimLine.StartsWith("Package"))
-            {
-                detail.Fields.Add(trimLine.TrimEnd(';'));
-            }
-        }
         return detail;
     }
-    [McpServerTool(Name = "inspect_class_by_name")]
-    [Description("仅通过类名（全限定名）在所有已分析的依赖中查找并解析类结构")]
+
+
     public async Task<ClassDetail> InspectClassByName([Description("完整的类名（如 com.example.MyClass）")] string fullClassName)
     {
         // 收集所有已知的 JAR 路径
@@ -475,9 +576,18 @@ public class MavenInspectorTools
         };
     }
 
+
+    [McpServerTool(Name = "inspect_class_by_name")]
+    [Description("仅通过类名（全限定名）在所有已分析的依赖中查找并解析类结构")]
+    public async Task<string> InspectClassSourceByName([Description("完整的类名（如 com.example.MyClass）")] string fullClassName)
+    {
+        var res = await InspectClassByName(fullClassName);
+        return res.RawClassData!;
+    }
+
     [McpServerTool(Name = "search_method_in_dependencies")]
     [Description("在所有依赖包中搜索包含指定方法名的类")]
-    public async  Task<List<ClassLocation>> SearchMethod([Description("pom.xml 文件的绝对路径")] string pomPath, [Description("方法名称（支持部分匹配，*为通配符）")] string methodName)
+    public async Task<List<ClassLocation>> SearchMethod([Description("pom.xml 文件的绝对路径")] string pomPath, [Description("方法名称（支持部分匹配，*为通配符）")] string methodName)
     {
         List<string> jarPaths;
 
@@ -488,21 +598,21 @@ public class MavenInspectorTools
         }
         else
         {
-             try
-             {
-                 if (File.GetLastWriteTimeUtc(pomPath) != cachedInfo.LastModified)
-                 {
-                     needsAnalyze = true;
-                 }
-             }
-             catch { needsAnalyze = true; }
+            try
+            {
+                if (File.GetLastWriteTimeUtc(pomPath) != cachedInfo.LastModified)
+                {
+                    needsAnalyze = true;
+                }
+            }
+            catch { needsAnalyze = true; }
         }
 
         if (needsAnalyze)
         {
-             var res = await AnalyzePomDependenciesByPom(pomPath);
-             if (res.JarPaths == null || res.JarPaths.Count == 0) return new List<ClassLocation>();
-             jarPaths = res.JarPaths;
+            var res = await AnalyzePomDependenciesByPom(pomPath);
+            if (res.JarPaths == null || res.JarPaths.Count == 0) return new List<ClassLocation>();
+            jarPaths = res.JarPaths;
         }
         else
         {
@@ -529,76 +639,58 @@ public class MavenInspectorTools
         Parallel.ForEach(jarPaths, (jarPath, state) =>
         {
             if (state.IsStopped) return;
-            
-             // 获取或分析 JAR (自动处理缓存)
-             var info = JarCacheManager.GetInstance().GetOrAnalyze(jarPath);
-             if (info == null) return;
 
-             foreach (var cls in info.Classes)
-             {
-                 if (state.IsStopped) break;
-                 
-                 // 检查是否有匹配的方法
-                 foreach (var mName in cls.MethodNames)
-                 {
-                     bool match = false;
-                     if (regex != null)
-                     {
-                         match = regex.IsMatch(mName);
-                     }
-                     else
-                     {
-                         match = mName.Contains(simpleContains, StringComparison.OrdinalIgnoreCase);
-                     }
+            // 获取或分析 JAR (自动处理缓存)
+            var info = JarCacheManager.GetInstance().GetOrAnalyze(jarPath);
+            if (info == null) return;
 
-                     if (match)
-                     {
-                         lock (lockObj)
-                         {
-                             if (results.Count >= 50)
-                             {
-                                 state.Stop();
-                                 break;
-                             }
-                             // 为了避免重复添加同一个类（如果该类有多个匹配方法）
-                             // 这里简单查重一下（虽然 List.Contains 慢，但 results 很小）
-                             // 或者直接 Add，最后 DistinctBy
-                             bool exists = results.Any(r => r.FullName == cls.FullName && r.JarPath == jarPath);
-                             if (!exists)
-                             {
-                                 results.Add(new ClassLocation
-                                 {
-                                     SimpleName = cls.SimpleName,
-                                     FullName = cls.FullName,
-                                     JarPath = jarPath
-                                 });
-                             }
-                         }
-                         break; // 只要找到一个方法匹配，这个类就符合条件
-                     }
-                 }
-             }
+            foreach (var cls in info.Classes)
+            {
+                if (state.IsStopped) break;
+
+                // 检查是否有匹配的方法
+                foreach (var mName in cls.MethodNames)
+                {
+                    bool match = false;
+                    if (regex != null)
+                    {
+                        match = regex.IsMatch(mName);
+                    }
+                    else
+                    {
+                        match = mName.Contains(simpleContains, StringComparison.OrdinalIgnoreCase);
+                    }
+
+                    if (match)
+                    {
+                        lock (lockObj)
+                        {
+                            if (results.Count >= 50)
+                            {
+                                state.Stop();
+                                break;
+                            }
+                            // 为了避免重复添加同一个类（如果该类有多个匹配方法）
+                            // 这里简单查重一下（虽然 List.Contains 慢，但 results 很小）
+                            // 或者直接 Add，最后 DistinctBy
+                            bool exists = results.Any(r => r.FullName == cls.FullName && r.JarPath == jarPath);
+                            if (!exists)
+                            {
+                                results.Add(new ClassLocation
+                                {
+                                    SimpleName = cls.SimpleName,
+                                    FullName = cls.FullName,
+                                    JarPath = jarPath
+                                });
+                            }
+                        }
+                        break; // 只要找到一个方法匹配，这个类就符合条件
+                    }
+                }
+            }
         });
 
         JarCacheManager.GetInstance().SaveCache();
-        return  results;
-    }
-
-    private bool ContainsBytes(byte[] source, byte[] pattern)
-    {
-        for (int i = 0; i <= source.Length - pattern.Length; i++)
-        {
-            bool match = true;
-            for (int k = 0; k < pattern.Length; k++)
-            {
-                if (source[i + k] != pattern[k])
-                {
-                    match = false;
-                    break;
-                }
-            }
-            if (match) return true;
-        }
-        return false;
+        return results;
     }
 }

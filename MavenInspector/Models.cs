@@ -29,6 +29,7 @@ public class ClassDetail
     public string Type { get; set; } = "class";
     public List<string> Fields { get; set; } = new();
     public List<JavaMethodInfo> Methods { get; set; } = new();
+    public string? RawClassData { get; set; }
 }
 
 public class JavaMethodInfo
@@ -37,4 +38,5 @@ public class JavaMethodInfo
     public string? ReturnType { get; set; }
     public List<string> Parameters { get; set; } = new();
     public string? Documentation { get; set; }
+    public string? RawMethodData { get; set; }
 }
