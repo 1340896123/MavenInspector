@@ -1,52 +1,42 @@
 ﻿using MavenInspector;
-using Newtonsoft.Json;
 using Microsoft.AspNetCore.Mvc;
+using Newtonsoft.Json;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Newtonsoft.Json.Linq;
 
-var builder = WebApplication.CreateBuilder(args);
+var builder = Host.CreateApplicationBuilder(args);
 
-// 配置日志输出到stderr (stdout用于MCP协议消息)
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole(o => o.LogToStandardErrorThreshold = LogLevel.Trace);
 
 // Add Services
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
 builder.Services.AddSingleton<MavenInspectorTools>();
+builder.Services.AddSingleton<MavenInspectorResources>();
+builder.Services.AddSingleton<MavenInspectorPrompts>();
 
-// 添加MCP服务：使用stdio传输模式并注册工具
-builder.Services.AddMcpServer().WithStdioServerTransport().WithTools<MavenInspectorTools>();
+// 添加MCP服务：使用stdio传输模式并注册工具、资源和提示
+builder.Services.AddMcpServer().WithStdioServerTransport()
+    .WithTools<MavenInspectorTools>();
+    //.WithResources<MavenInspectorResources>()
+    //.WithPrompts<MavenInspectorPrompts>();
 
 var app = builder.Build();
 
-// Configure Swagger
-app.UseSwagger();
-app.UseSwaggerUI();
 
 
 var tools = app.Services.GetRequiredService<MavenInspectorTools>();
 
-app.MapGet("/analyze_pom_dependencies", async (string pomPath) => await tools.AnalyzePomDependencies(pomPath))
-.WithName("AnalyzePomDependencies");
 
-app.MapGet("/search_class_in_dependencies", (string pomPath, string classNameQuery) => tools.SearchClass(pomPath, classNameQuery))
-.WithName("SearchClassInDependencies");
-
-app.MapGet("/inspect_java_class", async (string jarPath, string fullClassName) => await tools.InspectClass(jarPath, fullClassName))
-.WithName("InspectJavaClass");
-
-app.MapGet("/inspect_class_by_name", async (string fullClassName) => await tools.InspectClassByName(fullClassName))
-.WithName("InspectClassByName");
-
-app.MapGet("/search_method_in_dependencies", async (string pomPath, string methodName) => await tools.SearchMethod(pomPath, methodName))
-.WithName("SearchMethodInDependencies");
-
-
+var liwniwt= await tools.AnalyzePomDependenciesByPom("E:\\TDT\\项目\\沈阳新松半导体\\服务工程\\erdcloud-xspdm\\erdcloud-xspdm-service\\pom.xml");
 //var LLLL = tools.SearchClass("E:\\TDT\\项目\\沈阳新松半导体\\服务工程\\erdcloud-xspdm\\erdcloud-xspdm-service\\pom.xml", "erd.cloud.core.raw.rawdata");
 
+ var linfwt=await tools.SearchClass("E:\\TDT\\项目\\沈阳新松半导体\\服务工程\\erdcloud-xspdm\\erdcloud-xspdm-service\\pom.xml", "MenuValidatorFilter");
 
-//var lwfwt =await tools.InspectClass(LLLL.FirstOrDefault().JarPath, LLLL.FirstOrDefault().FullName);
+// //var lwfwt =await tools.InspectClass(LLLL.FirstOrDefault().JarPath, LLLL.FirstOrDefault().FullName);
 
-//var lll = JsonConvert.SerializeObject(lwfwt);
+// //var lll = JsonConvert.SerializeObject(lwfwt);
 
 await app.RunAsync();
 

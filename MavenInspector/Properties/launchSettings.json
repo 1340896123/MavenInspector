@@ -8,7 +8,8 @@
         "MavenInspectorMavnPath": "",
         "MavenInspectorMavnSettingPath": "",
         "MavenInspectorMavnlocalRepositoryPath": "",
-        "MavenInspectorFernflowerPath": "E:\\temp\\fernflower\\build\\libs\\fernflower.jar"
+        "MavenInspectorFernflowerPath": "E:\\temp\\fernflower\\build\\libs\\fernflower.jar",
+        "MavenInspectorCachePath": "C:\\Users\\admin\\AppData\\Local\\MavenInspector"
       },
       "applicationUrl": "https://localhost:64411;http://localhost:64412"
     }

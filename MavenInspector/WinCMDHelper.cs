@@ -85,7 +85,7 @@ namespace MavenInspector
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine(ex.Message);
+                    Logger.Log($"WinCMDHelper.RunCmd Error: {ex.Message}", "ERROR");
                     return ex.Message;
                 }
             }
@@ -124,7 +124,7 @@ namespace MavenInspector
             }
             catch (Exception ex)
             {
-                Console.WriteLine(ex.Message);
+                Logger.Log($"WinCMDHelper.RunDosCmd Error: {ex.Message}", "ERROR");
                 return ex.Message;
             }
         }
@@ -166,11 +166,16 @@ namespace MavenInspector
                     string output = outputTask.Result;
                     string result = errorTask.Result;
 
+                    if (!string.IsNullOrEmpty(result))
+                    {
+                        Logger.Log($"PowerShell Error Output: {result}", "WARN");
+                    }
+
                     return string.IsNullOrEmpty(result) ? output : "Err:" + result;
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine(ex.Message);
+                    Logger.Log($"WinCMDHelper.RunPowerShell Error: {ex.Message}", "ERROR");
                     return ex.Message;
                 }
             }

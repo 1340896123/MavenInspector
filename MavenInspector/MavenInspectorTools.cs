@@ -20,10 +20,17 @@ public class MavenInspectorTools
 
     public MavenInspectorTools()
     {
-        var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        var navDir = Path.Combine(appData, "MavenInspector");
-        Directory.CreateDirectory(navDir);
-        _cacheFilePath = Path.Combine(navDir, "dependency_cache.json");
+
+        var mavenInspectorCachePath = Environment.GetEnvironmentVariable("MavenInspectorCachePath");
+        if (mavenInspectorCachePath == null)
+        {
+            var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            mavenInspectorCachePath = Path.Combine(appData, "MavenInspector");
+        }
+        Directory.CreateDirectory(mavenInspectorCachePath);
+        Logger.Init(mavenInspectorCachePath); // Initialize logger in cache directory
+        _cacheFilePath = Path.Combine(mavenInspectorCachePath, "dependency_cache.json");
+        Logger.Log($"Cache file path: {_cacheFilePath}");
         LoadCache();
     }
 
@@ -87,7 +94,9 @@ public class MavenInspectorTools
     }
 
 
-    private async Task<DependencyScanResult> AnalyzePomDependenciesByPom([Description("pom.xml 文件的绝对路径")] string pomPath)
+
+
+    public async Task<DependencyScanResult> AnalyzePomDependenciesByPom(  string pomPath)
     {
         if (!File.Exists(pomPath))
         {
@@ -224,10 +233,14 @@ public class MavenInspectorTools
 
     [McpServerTool(Name = "analyze_pom_dependencies")]
     [Description("解析 pom.xml 获取所有依赖 jar 包的本地路径")]
-    public async Task<List<string>> AnalyzePomDependencies(string pomPath)
+    public async Task<List<string>> AnalyzePomDependencies([Description("pom.xml 文件的绝对路径")]  string pomPath)
     {
         var result = await AnalyzePomDependenciesByPom(pomPath);
-        return result.JarPaths.Select(x => new FileInfo(x).Name).ToList();
+        if (!string.IsNullOrEmpty(result.Error))
+        {
+            return new List<string> { result.Error };
+        }
+        return result.JarPaths;
     }
 
 
@@ -274,7 +287,7 @@ public class MavenInspectorTools
     }
     [McpServerTool(Name = "search_class_in_dependencies")]
     [Description("在所有依赖包中搜索指定的类名")]
-    public List<ClassLocation> SearchClass([Description("pom.xml 文件的绝对路径")] string pomPath, [Description("要搜索的类名（支持部分匹配，*为通配符）")] string classNameQuery)
+    public async  Task<List<ClassLocation>> SearchClass([Description("pom.xml 文件的绝对路径")] string pomPath, [Description("要搜索的类名（支持部分匹配，*为通配符）")] string classNameQuery)
     {
         // 1. 从缓存获取 JAR 列表
         List<string> jarPaths;
@@ -380,6 +393,7 @@ public class MavenInspectorTools
 
     public async Task<ClassDetail> InspectClass(string jarPath, string fullClassName)
     {
+        Logger.Log($"[InspectClass] Inspecting {fullClassName} in {jarPath}");
         // 1. 尝试查找源码 JAR
         string? sourceCode = null;
         try
@@ -387,6 +401,7 @@ public class MavenInspectorTools
             var sourceJarPath = jarPath.Replace(".jar", "-sources.jar");
             if (File.Exists(sourceJarPath))
             {
+                Logger.Log($"[InspectClass] Found source JAR: {sourceJarPath}");
                 using var zip = ZipFile.OpenRead(sourceJarPath);
                 var entryName = fullClassName.Replace('.', '/') + ".java";
                 var entry = zip.GetEntry(entryName);
@@ -395,10 +410,18 @@ public class MavenInspectorTools
                     using var stream = entry.Open();
                     using var reader = new StreamReader(stream);
                     sourceCode = await reader.ReadToEndAsync();
+                    Logger.Log($"[InspectClass] Successfully extracted source from JAR.");
+                }
+                else
+                {
+                    Logger.Log($"[InspectClass] Source file {entryName} not found in source JAR.", "WARN");
                 }
             }
         }
-        catch { /* 忽略源码查找错误 */ }
+        catch (Exception ex)
+        {
+            Logger.Log($"[InspectClass] Source lookup error: {ex.Message}", "ERROR");
+        }
 
 
         // 2. 尝试使用 Fernflower 反编译
@@ -409,10 +432,18 @@ public class MavenInspectorTools
                 var decompilerPath = Environment.GetEnvironmentVariable("MavenInspectorFernflowerPath");
                 if (!string.IsNullOrWhiteSpace(decompilerPath) && File.Exists(decompilerPath))
                 {
+                    Logger.Log($"[InspectClass] Source not found. Attempting decompile with Fernflower at {decompilerPath}");
                     sourceCode = await DecompileWithFernflower(decompilerPath, jarPath, fullClassName);
                 }
+                else
+                {
+                    Logger.Log($"[InspectClass] Fernflower decompiler path not set or file missing.", "WARN");
+                }
             }
-            catch { /* Ignore decompile errors */ }
+            catch (Exception ex)
+            {
+                Logger.Log($"[InspectClass] Decompile error: {ex.Message}", "ERROR");
+            }
         }
 
 
@@ -421,6 +452,7 @@ public class MavenInspectorTools
             return ParseClassDetailFromSource(sourceCode, fullClassName);
         }
 
+        Logger.Log($"[InspectClass] ERROR: Could not retrieve source code for {fullClassName}", "ERROR");
         return new ClassDetail
         {
             Name = fullClassName,
@@ -547,14 +579,21 @@ public class MavenInspectorTools
     }
 
 
-    public async Task<ClassDetail> InspectClassByName([Description("完整的类名（如 com.example.MyClass）")] string fullClassName)
+    public async Task<ClassDetail> InspectClassByName(string fullClassName)
     {
+        Logger.Log($"[InspectClassByName] Searching for class: {fullClassName}");
         // 收集所有已知的 JAR 路径
-        var allJars = _cache.Values.SelectMany(x => x.JarPaths).Distinct();
+        var allJars = _cache.Values.SelectMany(x => x.JarPaths).Distinct().ToList();
+        Logger.Log($"[InspectClassByName] Scanning {allJars.Count} JAR files from cache.");
 
+        //E:\TDT\项目\沈阳新松半导体\服务工程\erdcloud-xspdm\erdcloud-xspdm-service\pom.xml
         foreach (var jarPath in allJars)
         {
-            if (!File.Exists(jarPath)) continue;
+            if (!File.Exists(jarPath))
+            {
+                Logger.Log($"[InspectClassByName] JAR not found on disk: {jarPath}", "WARN");
+                continue;
+            }
 
             try
             {
@@ -562,13 +601,18 @@ public class MavenInspectorTools
                 var entryName = fullClassName.Replace('.', '/') + ".class";
                 if (zip.GetEntry(entryName) != null)
                 {
+                    Logger.Log($"[InspectClassByName] Found class in JAR: {jarPath}");
                     // 找到类，进行检查
                     return await InspectClass(jarPath, fullClassName);
                 }
             }
-            catch { /* Ignore invalid zip */ }
+            catch (Exception ex)
+            {
+                Logger.Log($"[InspectClassByName] Error reading JAR {jarPath}: {ex.Message}", "ERROR");
+            }
         }
 
+        Logger.Log($"[InspectClassByName] Class {fullClassName} not found in any cached JARs.", "WARN");
         return new ClassDetail
         {
             Name = fullClassName,
