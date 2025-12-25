@@ -9,7 +9,7 @@ public class JarCacheManager
 {
     private static JarCacheManager _instance;
     private readonly string _cacheFilePath;
-    private readonly ConcurrentDictionary<string, JarAnalysisInfo> _memoryCache = new();
+    private readonly ConcurrentDictionary<string, JarAnalysisInfo> _memoryCache;
     private readonly object _fileLock = new();
 
     public static JarCacheManager GetInstance()
@@ -21,6 +21,9 @@ public class JarCacheManager
 
     private JarCacheManager()
     {
+        // 使用大小写不敏感的比较器
+        _memoryCache = new ConcurrentDictionary<string, JarAnalysisInfo>(StringComparer.OrdinalIgnoreCase);
+
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
         var dir = Path.Combine(appData, "MavenInspector");
         Directory.CreateDirectory(dir);
@@ -49,7 +52,11 @@ public class JarCacheManager
                                 {
                                     foreach (var item in list)
                                     {
-                                        _memoryCache[item.JarPath] = item;
+                                        // 规范化jarPath作为缓存key
+                                        var normalizedPath = PathHelper.NormalizeForCache(item.JarPath);
+                                        _memoryCache[normalizedPath] = item;
+                                        // 同时更新item的JarPath为规范化路径
+                                        item.JarPath = normalizedPath;
                                     }
                                 }
                             }
@@ -95,10 +102,13 @@ public class JarCacheManager
     {
         if (!File.Exists(jarPath)) return null;
 
+        // 规范化jarPath用于缓存
+        var normalizedPath = PathHelper.NormalizeForCache(jarPath);
+
         string hash = ComputeHash(jarPath);
 
         // Check memory cache
-        if (_memoryCache.TryGetValue(jarPath, out var info))
+        if (_memoryCache.TryGetValue(normalizedPath, out var info))
         {
             if (info.FileHash == hash)
             {
@@ -108,17 +118,19 @@ public class JarCacheManager
 
         // Analyze
         var newInfo = AnalyzeJar(jarPath, hash);
-        _memoryCache[jarPath] = newInfo;
-        
+        _memoryCache[normalizedPath] = newInfo;
+        // 更新info中的JarPath为规范化路径
+        newInfo.JarPath = normalizedPath;
+
         // Save periodically or essentially on change to ensure persistence
-        // For performance, maybe don't save on *every* new jar if doing bulk scan, 
+        // For performance, maybe don't save on *every* new jar if doing bulk scan,
         // but for now simplest is just save. Or caller can call Save explicitly.
         // We'll leave Save explicit or periodic if needed, but here simple is OK.
-        // Let's rely on caller to save or save on dispose? 
+        // Let's rely on caller to save or save on dispose?
         // Or just save here to be safe.
         // To avoid too much I/O during parallel scan, maybe we don't save instant.
         // But for consistency let's just update memory. Caller (MavenInspectorTools) can call SaveCache at end.
-        
+
         return newInfo;
     }
 

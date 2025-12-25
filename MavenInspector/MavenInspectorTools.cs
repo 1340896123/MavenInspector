@@ -20,6 +20,8 @@ public class MavenInspectorTools
 
     public MavenInspectorTools()
     {
+        // 使用大小写不敏感的比较器
+        _cache = new Dictionary<string, CachedDependencyInfo>(StringComparer.OrdinalIgnoreCase);
 
         var mavenInspectorCachePath = Environment.GetEnvironmentVariable("MavenInspectorCachePath");
         if (mavenInspectorCachePath == null)
@@ -52,12 +54,20 @@ public class MavenInspectorTools
                     if (File.Exists(_cacheFilePath))
                     {
                         var json = File.ReadAllText(_cacheFilePath);
-                        _cache = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, CachedDependencyInfo>>(json)
-                                 ?? new Dictionary<string, CachedDependencyInfo>();
+                        var tempCache = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, CachedDependencyInfo>>(json)
+                                     ?? new Dictionary<string, CachedDependencyInfo>();
+
+                        // 规范化缓存key，使用大小写不敏感的字典
+                        _cache = new Dictionary<string, CachedDependencyInfo>(StringComparer.OrdinalIgnoreCase);
+                        foreach (var kvp in tempCache)
+                        {
+                            var normalizedKey = PathHelper.NormalizeForCache(kvp.Key);
+                            _cache[normalizedKey] = kvp.Value;
+                        }
                     }
                     else
                     {
-                        _cache = new Dictionary<string, CachedDependencyInfo>();
+                        _cache = new Dictionary<string, CachedDependencyInfo>(StringComparer.OrdinalIgnoreCase);
                     }
                 }
                 finally
@@ -68,7 +78,7 @@ public class MavenInspectorTools
         }
         catch
         {
-            _cache = new Dictionary<string, CachedDependencyInfo>();
+            _cache = new Dictionary<string, CachedDependencyInfo>(StringComparer.OrdinalIgnoreCase);
         }
     }
 
@@ -106,11 +116,14 @@ public class MavenInspectorTools
         var workingDir = Path.GetDirectoryName(pomPath);
         if (string.IsNullOrEmpty(workingDir)) workingDir = Directory.GetCurrentDirectory();
 
+        // 规范化pomPath用于缓存
+        var normalizedPomPath = PathHelper.NormalizeForCache(pomPath);
+
         // Check cache validity
         try
         {
             var currentLastWrite = File.GetLastWriteTimeUtc(pomPath);
-            if (_cache.TryGetValue(pomPath, out var cachedInfo))
+            if (_cache.TryGetValue(normalizedPomPath, out var cachedInfo))
             {
                 if (cachedInfo.LastModified == currentLastWrite && cachedInfo.JarPaths != null && cachedInfo.JarPaths.Count > 0)
                 {
@@ -197,8 +210,12 @@ public class MavenInspectorTools
                     if (!string.IsNullOrEmpty(group) && !string.IsNullOrEmpty(name) && !string.IsNullOrEmpty(version))
                     {
                         var jarName = $"{name}-{version}.jar";
-                        var relativePath = Path.Combine(group.Replace('.', Path.DirectorySeparatorChar), name, version, jarName);
+                        // 使用PathHelper规范化路径
+                        var groupPath = group.Replace('.', '/');
+                        var relativePath = Path.Combine(groupPath, name, version, jarName);
                         var fullPath = Path.Combine(localRepo, relativePath);
+                        // 规范化完整路径
+                        fullPath = PathHelper.NormalizePathSeparators(fullPath);
 
                         if (File.Exists(fullPath))
                         {
@@ -212,7 +229,7 @@ public class MavenInspectorTools
                 return new DependencyScanResult { Error = $"Failed to parse bom.xml: {ex.Message}" };
             }
 
-            _cache[pomPath] = new CachedDependencyInfo
+            _cache[normalizedPomPath] = new CachedDependencyInfo
             {
                 LastModified = File.GetLastWriteTimeUtc(pomPath),
                 JarPaths = jarPaths
@@ -289,11 +306,14 @@ public class MavenInspectorTools
     [Description("在所有依赖包中搜索指定的类名")]
     public async  Task<List<ClassLocation>> SearchClass([Description("pom.xml 文件的绝对路径")] string pomPath, [Description("要搜索的类名（支持部分匹配，*为通配符）")] string classNameQuery)
     {
+        // 规范化pomPath用于缓存
+        var normalizedPomPath = PathHelper.NormalizeForCache(pomPath);
+
         // 1. 从缓存获取 JAR 列表
         List<string> jarPaths;
 
         bool needsAnalyze = false;
-        if (!_cache.TryGetValue(pomPath, out var cachedInfo))
+        if (!_cache.TryGetValue(normalizedPomPath, out var cachedInfo))
         {
             needsAnalyze = true;
         }
@@ -633,10 +653,13 @@ public class MavenInspectorTools
     [Description("在所有依赖包中搜索包含指定方法名的类")]
     public async Task<List<ClassLocation>> SearchMethod([Description("pom.xml 文件的绝对路径")] string pomPath, [Description("方法名称（支持部分匹配，*为通配符）")] string methodName)
     {
+        // 规范化pomPath用于缓存
+        var normalizedPomPath = PathHelper.NormalizeForCache(pomPath);
+
         List<string> jarPaths;
 
         bool needsAnalyze = false;
-        if (!_cache.TryGetValue(pomPath, out var cachedInfo))
+        if (!_cache.TryGetValue(normalizedPomPath, out var cachedInfo))
         {
             needsAnalyze = true;
         }
