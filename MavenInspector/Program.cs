@@ -34,6 +34,9 @@ var liwniwt= await tools.AnalyzePomDependenciesByPom("E:\\TDT\\项目\\沈阳新
 
  var linfwt=await tools.SearchClass("E:\\TDT\\项目\\沈阳新松半导体\\服务工程\\erdcloud-xspdm\\erdcloud-xspdm-service\\pom.xml", "MenuValidatorFilter");
 
+var llllddw= await tools.SearchMethodUsageByDefinition("erd.cloud.core.access.business.EtAccessControlService", "hasPermission(JudgePermissionDTO)");
+
+
 // //var lwfwt =await tools.InspectClass(LLLL.FirstOrDefault().JarPath, LLLL.FirstOrDefault().FullName);
 
 // //var lll = JsonConvert.SerializeObject(lwfwt);

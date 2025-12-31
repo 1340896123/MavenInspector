@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Xml.Linq;
+using System.Linq;
 
 namespace MavenInspector;
 
@@ -17,11 +18,13 @@ public class MavenInspectorTools
     private Dictionary<string, CachedDependencyInfo> _cache;
     private readonly string _cacheFilePath;
     private string _localRepoPath;
+    private readonly Dictionary<string, ClassDetail> _classDetailCache;
 
     public MavenInspectorTools()
     {
         // 使用大小写不敏感的比较器
         _cache = new Dictionary<string, CachedDependencyInfo>(StringComparer.OrdinalIgnoreCase);
+        _classDetailCache = new Dictionary<string, ClassDetail>(StringComparer.OrdinalIgnoreCase);
 
         var mavenInspectorCachePath = Environment.GetEnvironmentVariable("MavenInspectorCachePath");
         if (mavenInspectorCachePath == null)
@@ -469,7 +472,9 @@ public class MavenInspectorTools
 
         if (sourceCode != null)
         {
-            return ParseClassDetailFromSource(sourceCode, fullClassName);
+            var detail = ParseClassDetailFromSource(sourceCode, fullClassName);
+            _classDetailCache[fullClassName] = detail;
+            return detail;
         }
 
         Logger.Log($"[InspectClass] ERROR: Could not retrieve source code for {fullClassName}", "ERROR");
@@ -541,6 +546,103 @@ public class MavenInspectorTools
         }
     }
 
+    private static bool IsBasicJavaType(string typeName)
+    {
+        if (string.IsNullOrWhiteSpace(typeName)) return true;
+        var simple = typeName.Trim();
+        simple = simple.Replace("[]", "").Replace("...", "");
+        var lastDot = simple.LastIndexOf('.');
+        if (lastDot >= 0 && lastDot < simple.Length - 1)
+        {
+            simple = simple[(lastDot + 1)..];
+        }
+
+        switch (simple)
+        {
+            case "byte":
+            case "short":
+            case "int":
+            case "long":
+            case "float":
+            case "double":
+            case "boolean":
+            case "char":
+            case "void":
+            case "Byte":
+            case "Short":
+            case "Integer":
+            case "Long":
+            case "Float":
+            case "Double":
+            case "Boolean":
+            case "Character":
+            case "String":
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private static string NormalizeMethodDefinition(string className, string signature, JavaMethodInfo method)
+    {
+        if (string.IsNullOrWhiteSpace(signature)) return "";
+
+        var idxParen = signature.IndexOf('(');
+        if (idxParen <= 0) return "";
+
+        var header = signature[..idxParen].Trim();
+        var paramPart = signature[(idxParen + 1)..];
+        var idxClose = paramPart.LastIndexOf(')');
+        if (idxClose >= 0)
+        {
+            paramPart = paramPart[..idxClose];
+        }
+
+        var headerTokens = header.Split(new[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+        if (headerTokens.Length == 0) return "";
+
+        var methodName = headerTokens[^1];
+
+        var nonBasicParamTypes = new List<string>();
+        if (!string.IsNullOrWhiteSpace(paramPart))
+        {
+            var paramItems = paramPart.Split(',');
+            foreach (var raw in paramItems)
+            {
+                var p = raw.Trim();
+                if (p.Length == 0) continue;
+
+                var spaceTokens = p.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                if (spaceTokens.Length == 0) continue;
+
+                var typeTokens = spaceTokens.Take(spaceTokens.Length - 1).ToArray();
+                if (typeTokens.Length == 0)
+                {
+                    typeTokens = spaceTokens;
+                }
+
+                var typePart = string.Join(" ", typeTokens);
+                var genericIdx = typePart.IndexOf('<');
+                if (genericIdx >= 0)
+                {
+                    typePart = typePart[..genericIdx];
+                }
+                typePart = typePart.Replace("[]", "").Replace("...", "").Trim();
+                if (typePart.Length == 0) continue;
+
+                if (!IsBasicJavaType(typePart))
+                {
+                    nonBasicParamTypes.Add(typePart);
+                    method.Parameters.Add(typePart);
+                }
+            }
+        }
+
+        return nonBasicParamTypes.Count == 0
+            ? methodName + "()"
+            : methodName + "(" + string.Join(",", nonBasicParamTypes) + ")";
+    }
+
     private ClassDetail ParseClassDetailFromSource(string sourceCode, string className)
     {
         var detail = new ClassDetail
@@ -554,6 +656,22 @@ public class MavenInspectorTools
             // 简单移除注释
             string cleanCode = Regex.Replace(sourceCode, @"/\*.*?\*/", "", RegexOptions.Singleline);
             cleanCode = Regex.Replace(cleanCode, @"//.*$", "", RegexOptions.Multiline);
+
+            var pkgMatch = Regex.Match(cleanCode, @"^\s*package\s+([^\s;]+)\s*;", RegexOptions.Multiline);
+            if (pkgMatch.Success)
+            {
+                detail.Package = pkgMatch.Groups[1].Value.Trim();
+            }
+
+            var importRegex = new Regex(@"^\s*import\s+([^\s;]+)\s*;", RegexOptions.Multiline);
+            foreach (Match im in importRegex.Matches(cleanCode))
+            {
+                var imp = im.Groups[1].Value.Trim();
+                if (imp.Length > 0 && !detail.Imports.Contains(imp))
+                {
+                    detail.Imports.Add(imp);
+                }
+            }
 
             // Regex 提取方法签名
             // 匹配： (修饰符...) 返回值 方法名(参数) ... {
@@ -574,11 +692,14 @@ public class MavenInspectorTools
                 // 排除控制流
                 if (sig.StartsWith("if") || sig.StartsWith("for") || sig.StartsWith("while") || sig.StartsWith("switch") || sig.StartsWith("catch")) continue;
 
-                detail.Methods.Add(new JavaMethodInfo
+                var methodInfo = new JavaMethodInfo
                 {
                     Signature = sig,
                     RawMethodData = match.Value
-                });
+                };
+
+                methodInfo.NormalizedDefinition = NormalizeMethodDefinition(className, sig, methodInfo);
+                detail.Methods.Add(methodInfo);
             }
 
             // Regex 提取字段
@@ -759,5 +880,42 @@ public class MavenInspectorTools
 
         JarCacheManager.GetInstance().SaveCache();
         return results;
+    }
+
+
+    [McpServerTool(Name = "search_method_usage_by_definition")]
+    [Description("根据完整类名和方法定义，在缓存的类信息中查找该方法的源码片段/使用说明")]
+    public async Task<string> SearchMethodUsageByDefinition(
+        [Description("完整的类名（如 erd.cloud.xspdm.controller.xspdmController）")] string fullClassName,
+        [Description("方法的规范定义，例如 doSomething(OrderDto) 或 doSomething()")] string methodDefinition)
+    {
+        if (string.IsNullOrWhiteSpace(fullClassName) || string.IsNullOrWhiteSpace(methodDefinition))
+        {
+            return "";
+        }
+
+        if (!_classDetailCache.TryGetValue(fullClassName, out var detail))
+        {
+            detail = await InspectClassByName(fullClassName);
+            if (detail != null)
+            {
+                _classDetailCache[fullClassName] = detail;
+            }
+        }
+
+        if (detail == null || detail.Methods == null || detail.Methods.Count == 0)
+        {
+            return "";
+        }
+
+        var target = detail.Methods
+            .FirstOrDefault(m => string.Equals(m.NormalizedDefinition, methodDefinition, StringComparison.Ordinal));
+
+        if (target == null)
+        {
+            return "";
+        }
+
+        return target.RawMethodData ?? target.Signature;
     }
 }

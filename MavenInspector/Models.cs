@@ -30,6 +30,7 @@ public class ClassDetail
     public List<string> Fields { get; set; } = new();
     public List<JavaMethodInfo> Methods { get; set; } = new();
     public string? RawClassData { get; set; }
+    public List<string> Imports { get; set; } = new();
 }
 
 public class JavaMethodInfo
@@ -39,4 +40,5 @@ public class JavaMethodInfo
     public List<string> Parameters { get; set; } = new();
     public string? Documentation { get; set; }
     public string? RawMethodData { get; set; }
+    public string? NormalizedDefinition { get; set; }
 }
