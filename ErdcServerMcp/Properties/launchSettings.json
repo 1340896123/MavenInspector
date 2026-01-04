@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "ErdcServerMcp": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "https://localhost:61045;http://localhost:61046"
+    }
+  }
+}

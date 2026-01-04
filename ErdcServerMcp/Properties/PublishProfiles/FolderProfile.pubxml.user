@@ -1,0 +1,9 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!-- https://go.microsoft.com/fwlink/?LinkID=208121. -->
+<Project>
+  <PropertyGroup>
+    <_PublishTargetUrl>D:\Source\MavenExplore\ErdcServerMcp\bin\Release\net10.0\publish\</_PublishTargetUrl>
+    <History>True|2025-12-31T03:23:27.1893642Z||;True|2025-12-31T11:23:04.9106112+08:00||;False|2025-12-31T10:48:15.1452656+08:00||;False|2025-12-31T10:47:39.1629737+08:00||;False|2025-12-31T10:47:12.6399023+08:00||;False|2025-12-31T10:46:57.3452992+08:00||;False|2025-12-31T10:46:22.2604119+08:00||;False|2025-12-31T10:45:14.6322239+08:00||;True|2025-12-31T10:41:47.1534861+08:00||;False|2025-12-31T10:41:14.4967316+08:00||;False|2025-12-31T10:40:58.3143679+08:00||;False|2025-12-31T10:39:45.2142003+08:00||;False|2025-12-31T10:39:38.4310299+08:00||;True|2025-12-31T10:39:09.1218256+08:00||;True|2025-12-31T10:38:24.8870747+08:00||;True|2025-12-31T10:37:41.5931148+08:00||;</History>
+    <LastFailureDetails />
+  </PropertyGroup>
+</Project>
