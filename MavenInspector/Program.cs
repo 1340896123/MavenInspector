@@ -3,15 +3,18 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 
-var builder =   WebApplication.CreateBuilder(args);
+var builder = WebApplication.CreateBuilder(args);
 
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole(o => o.LogToStandardErrorThreshold = LogLevel.Trace);
 
+// Load configuration from appsettings.json using standard .NET IConfiguration
+var configOptions = new ConfigOptions();
+builder.Configuration.GetSection("ConfigOptions").Bind(configOptions);
+
 // Add Services
+builder.Services.AddSingleton(configOptions);
 builder.Services.AddSingleton<MavenInspectorTools>();
 
 // 添加MCP服务：使用stdio传输模式并注册工具、资源和提示

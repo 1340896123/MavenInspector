@@ -19,14 +19,16 @@ public class MavenInspectorTools
     private readonly string _cacheFilePath;
     private string _localRepoPath;
     private readonly Dictionary<string, ClassDetail> _classDetailCache;
+    private readonly ConfigOptions _config;
 
-    public MavenInspectorTools()
+    public MavenInspectorTools(ConfigOptions config)
     {
+        _config = config;
         // 使用大小写不敏感的比较器
         _cache = new Dictionary<string, CachedDependencyInfo>(StringComparer.OrdinalIgnoreCase);
         _classDetailCache = new Dictionary<string, ClassDetail>(StringComparer.OrdinalIgnoreCase);
 
-        var mavenInspectorCachePath = Environment.GetEnvironmentVariable("MavenInspectorCachePath");
+        var mavenInspectorCachePath = _config.CachePath;
         if (mavenInspectorCachePath == null)
         {
             var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
@@ -145,11 +147,11 @@ public class MavenInspectorTools
             return new DependencyScanResult { Error = "Could not determine local maven repository path." };
 
         // 使用 WinCMDHelper 执行 Maven 命令 (PowerShell)
-        // Check environment variables for custom mvn path and settings
-        var mvnPath = Environment.GetEnvironmentVariable("MavenInspectorMavnPath");
+        // Check config for custom mvn path and settings
+        var mvnPath = _config.MavenPath;
         var mvnCmd = string.IsNullOrWhiteSpace(mvnPath) ? "mvn" : $"& '{mvnPath}'"; // Use call operator for paths
 
-        var settingsPath = Environment.GetEnvironmentVariable("MavenInspectorMavnSettingPath");
+        var settingsPath = _config.MavenSettingPath;
         var settingsArg = string.IsNullOrWhiteSpace(settingsPath) ? "" : $" -s '{settingsPath}'";
 
         var mvnCommand = $"{mvnCmd}{settingsArg} -B org.cyclonedx:cyclonedx-maven-plugin:makeAggregateBom";
@@ -268,8 +270,8 @@ public class MavenInspectorTools
     {
         if (!string.IsNullOrEmpty(_localRepoPath)) return _localRepoPath;
 
-        // 1. Check Env Var for local repo override
-        var envRepoPath = Environment.GetEnvironmentVariable("MavenInspectorMavnlocalRepositoryPath");
+        // 1. Check config for local repo override
+        var envRepoPath = _config.MavenLocalRepositoryPath;
         if (!string.IsNullOrWhiteSpace(envRepoPath))
         {
             _localRepoPath = envRepoPath;
@@ -277,10 +279,10 @@ public class MavenInspectorTools
         }
 
         // 2. Fallback to asking Maven
-        var mvnPath = Environment.GetEnvironmentVariable("MavenInspectorMavnPath");
+        var mvnPath = _config.MavenPath;
         var mvnCmd = string.IsNullOrWhiteSpace(mvnPath) ? "mvn" : $"& '{mvnPath}'";
 
-        var settingsPath = Environment.GetEnvironmentVariable("MavenInspectorMavnSettingPath");
+        var settingsPath = _config.MavenSettingPath;
         var settingsArg = string.IsNullOrWhiteSpace(settingsPath) ? "" : $" -s '{settingsPath}'";
 
         var cmdArgs = $"Set-Location -Path '{workingDir}'; {mvnCmd}{settingsArg} -B help:effective-settings";
@@ -452,7 +454,7 @@ public class MavenInspectorTools
         {
             try
             {
-                var decompilerPath = Environment.GetEnvironmentVariable("MavenInspectorFernflowerPath");
+                var decompilerPath = _config.FernflowerPath;
                 if (!string.IsNullOrWhiteSpace(decompilerPath) && File.Exists(decompilerPath))
                 {
                     Logger.Log($"[InspectClass] Source not found. Attempting decompile with Fernflower at {decompilerPath}");
