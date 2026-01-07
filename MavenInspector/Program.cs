@@ -25,7 +25,7 @@ builder.Services.AddMcpServer().WithHttpTransport().WithTools<MavenInspectorTool
 
 var app = builder.Build();
 
-app.MapMcp();
+app.MapMcp("mcp");
 
 //var tools = app.Services.GetRequiredService<MavenInspectorTools>();
 

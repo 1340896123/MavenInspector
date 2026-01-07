@@ -19,6 +19,6 @@ builder.Services.AddMcpServer()
 var app = builder.Build();
 
 // 映射 MCP 端点
-app.MapMcp();
+app.MapMcp("mcp");
 
 app.Run();
