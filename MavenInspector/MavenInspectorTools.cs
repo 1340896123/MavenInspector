@@ -111,8 +111,10 @@ public class MavenInspectorTools
 
 
 
-    public async Task<DependencyScanResult> AnalyzePomDependenciesByPom(  string pomPath)
+    public async Task<DependencyScanResult> AnalyzePomDependenciesByPom(string pomPath, bool forceReanalyze = false)
     {
+        Logger.Log($"[AnalyzePomDependenciesByPom] 开始分析: {pomPath}, 强制重新分析: {forceReanalyze}");
+        
         if (!File.Exists(pomPath))
         {
             return new DependencyScanResult { Error = $"File not found: {pomPath}" };
@@ -130,8 +132,9 @@ public class MavenInspectorTools
             var currentLastWrite = File.GetLastWriteTimeUtc(pomPath);
             if (_cache.TryGetValue(normalizedPomPath, out var cachedInfo))
             {
-                if (cachedInfo.LastModified == currentLastWrite && cachedInfo.JarPaths != null && cachedInfo.JarPaths.Count > 0)
+                if (!forceReanalyze && cachedInfo.LastModified == currentLastWrite && cachedInfo.JarPaths != null && cachedInfo.JarPaths.Count > 0)
                 {
+                    Logger.Log($"[AnalyzePomDependenciesByPom] 使用缓存: {cachedInfo.JarPaths.Count} 个 jar");
                     return new DependencyScanResult
                     {
                         ProjectRoot = workingDir,
@@ -141,6 +144,8 @@ public class MavenInspectorTools
             }
         }
         catch { /* Ignore cache errors and re-analyze */ }
+
+        Logger.Log($"[AnalyzePomDependenciesByPom] 缓存未命中或强制重新分析，开始执行 Maven 命令");
 
         var localRepo = await GetLocalRepositoryPath(workingDir);
         if (string.IsNullOrEmpty(localRepo))
@@ -196,21 +201,36 @@ public class MavenInspectorTools
             }
 
             var jarPaths = new List<string>();
+            var allComponentsCount = 0;
+            var libraryComponentsCount = 0;
+            var missingJarCount = 0;
+            
             try
             {
                 var doc = XDocument.Load(bomPath);
                 XNamespace ns = doc.Root?.Name.Namespace ?? XNamespace.None;
 
-                var components = doc.Descendants(ns + "component");
+                var components = doc.Descendants(ns + "component").ToList();
+                allComponentsCount = components.Count;
+                Logger.Log($"[AnalyzePomDependenciesByPom] BOM 中共有 {allComponentsCount} 个组件");
+
                 foreach (var comp in components)
                 {
                     var type = comp.Attribute("type")?.Value;
                     // 只关注 library 类型的依赖
-                    if (type != "library") continue;
+                    if (type != "library")
+                    {
+                        Logger.Log($"[AnalyzePomDependenciesByPom] 跳过非 library 类型组件: {type}");
+                        continue;
+                    }
+
+                    libraryComponentsCount++;
 
                     var group = comp.Element(ns + "group")?.Value;
                     var name = comp.Element(ns + "name")?.Value;
                     var version = comp.Element(ns + "version")?.Value;
+
+                    Logger.Log($"[AnalyzePomDependenciesByPom] 处理依赖: {group}:{name}:{version}");
 
                     if (!string.IsNullOrEmpty(group) && !string.IsNullOrEmpty(name) && !string.IsNullOrEmpty(version))
                     {
@@ -225,9 +245,17 @@ public class MavenInspectorTools
                         if (File.Exists(fullPath))
                         {
                             jarPaths.Add(fullPath);
+                            Logger.Log($"[AnalyzePomDependenciesByPom] ✓ JAR 存在: {fullPath}");
+                        }
+                        else
+                        {
+                            missingJarCount++;
+                            Logger.Log($"[AnalyzePomDependenciesByPom] ✗ JAR 不存在: {fullPath}", "WARN");
                         }
                     }
                 }
+                
+                Logger.Log($"[AnalyzePomDependenciesByPom] 统计: 总组件 {allComponentsCount}, library 组件 {libraryComponentsCount}, 找到 JAR {jarPaths.Count}, 缺失 JAR {missingJarCount}");
             }
             catch (Exception ex)
             {
@@ -255,14 +283,75 @@ public class MavenInspectorTools
 
     [McpServerTool(Name = "analyze_pom_dependencies")]
     [Description("解析 pom.xml 获取所有依赖 jar 包的本地路径")]
-    public async Task<List<string>> AnalyzePomDependencies([Description("pom.xml 文件的绝对路径")]  string pomPath)
+    public async Task<List<string>> AnalyzePomDependencies([Description("pom.xml 文件的绝对路径")]  string pomPath, [Description("是否强制重新分析，忽略缓存")] bool forceReanalyze = false)
     {
-        var result = await AnalyzePomDependenciesByPom(pomPath);
+        var result = await AnalyzePomDependenciesByPom(pomPath, forceReanalyze);
         if (!string.IsNullOrEmpty(result.Error))
         {
             return new List<string> { result.Error };
         }
+        Logger.Log($"[AnalyzePomDependencies] 返回 {result.JarPaths.Count} 个 jar 路径");
         return result.JarPaths;
+    }
+
+    [McpServerTool(Name = "get_bom_xml_content")]
+    [Description("获取 pom.xml 生成的 BOM 文件内容（用于诊断）")]
+    public async Task<string> GetBomXmlContent([Description("pom.xml 文件的绝对路径")] string pomPath)
+    {
+        if (!File.Exists(pomPath))
+        {
+            return $"错误：文件不存在: {pomPath}";
+        }
+
+        var workingDir = Path.GetDirectoryName(pomPath);
+        if (string.IsNullOrEmpty(workingDir))
+        {
+            workingDir = Directory.GetCurrentDirectory();
+        }
+
+        var bomPath = Path.Combine(workingDir, "target", "bom.xml");
+        
+        if (!File.Exists(bomPath))
+        {
+            // 尝试运行 Maven 命令生成 BOM
+            var localRepo = await GetLocalRepositoryPath(workingDir);
+            var mvnPath = _config.MavenPath;
+            var mvnCmd = string.IsNullOrWhiteSpace(mvnPath) ? "mvn" : $"& '{mvnPath}'";
+            var settingsPath = _config.MavenSettingPath;
+            var settingsArg = string.IsNullOrWhiteSpace(settingsPath) ? "" : $" -s '{settingsPath}'";
+            var mvnCommand = $"{mvnCmd}{settingsArg} -B org.cyclonedx:cyclonedx-maven-plugin:makeAggregateBom";
+            var cmdArgs = $"Set-Location -Path '{workingDir}'; {mvnCommand}";
+            
+            Logger.Log($"[GetBomXmlContent] 运行 Maven 命令生成 BOM");
+            var output = WinCMDHelper.GetInstance().RunPowerShell(cmdArgs);
+            
+            if (!File.Exists(bomPath))
+            {
+                return $"BOM 文件不存在: {bomPath}\nMaven 输出:\n{output}";
+            }
+        }
+
+        try
+        {
+            var content = await File.ReadAllTextAsync(bomPath);
+            
+            // 统计信息
+            var doc = XDocument.Parse(content);
+            XNamespace ns = doc.Root?.Name.Namespace ?? XNamespace.None;
+            var components = doc.Descendants(ns + "component").ToList();
+            var libraryCount = components.Count(c => c.Attribute("type")?.Value == "library");
+            
+            var info = $"BOM 文件路径: {bomPath}\n" +
+                       $"总组件数: {components.Count}\n" +
+                       $"library 类型组件数: {libraryCount}\n\n" +
+                       "BOM 内容:\n" + content;
+            
+            return info;
+        }
+        catch (Exception ex)
+        {
+            return $"读取 BOM 文件失败: {ex.Message}";
+        }
     }
 
 
