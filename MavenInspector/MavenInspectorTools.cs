@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -44,7 +45,9 @@ public class MavenInspectorTools
     private class CachedDependencyInfo
     {
         public DateTime LastModified { get; set; }
+        public string? PomHash { get; set; }
         public List<string> JarPaths { get; set; } = new();
+        public Dictionary<string, string> JarHashes { get; set; } = new();
     }
 
     private void LoadCache()
@@ -126,15 +129,54 @@ public class MavenInspectorTools
         // 规范化pomPath用于缓存
         var normalizedPomPath = PathHelper.NormalizeForCache(pomPath);
 
-        // Check cache validity
+        // 预先计算当前POM的MD5，用于与缓存对比
+        string currentPomHash = ComputeFileHash(pomPath);
+
+        // Check cache validity（基于POM MD5 + 每个JAR的MD5）
         try
         {
             var currentLastWrite = File.GetLastWriteTimeUtc(pomPath);
-            if (_cache.TryGetValue(normalizedPomPath, out var cachedInfo))
+            if (!forceReanalyze &&
+                _cache.TryGetValue(normalizedPomPath, out var cachedInfo) &&
+                cachedInfo.JarPaths != null && cachedInfo.JarPaths.Count > 0 &&
+                !string.IsNullOrEmpty(cachedInfo.PomHash) &&
+                string.Equals(cachedInfo.PomHash, currentPomHash, StringComparison.OrdinalIgnoreCase) &&
+                cachedInfo.JarHashes != null && cachedInfo.JarHashes.Count > 0)
             {
-                if (!forceReanalyze && cachedInfo.LastModified == currentLastWrite && cachedInfo.JarPaths != null && cachedInfo.JarPaths.Count > 0)
+                bool jarsValid = true;
+
+                foreach (var jarPath in cachedInfo.JarPaths)
                 {
-                    Logger.Log($"[AnalyzePomDependenciesByPom] 使用缓存: {cachedInfo.JarPaths.Count} 个 jar");
+                    if (string.IsNullOrEmpty(jarPath))
+                    {
+                        jarsValid = false;
+                        break;
+                    }
+
+                    // 使用缓存中记录的jar hash进行校验
+                    if (!cachedInfo.JarHashes.TryGetValue(jarPath, out var expectedHash) || string.IsNullOrEmpty(expectedHash))
+                    {
+                        jarsValid = false;
+                        break;
+                    }
+
+                    if (!File.Exists(jarPath))
+                    {
+                        jarsValid = false;
+                        break;
+                    }
+
+                    var currentJarHash = ComputeFileHash(jarPath);
+                    if (!string.Equals(currentJarHash, expectedHash, StringComparison.OrdinalIgnoreCase))
+                    {
+                        jarsValid = false;
+                        break;
+                    }
+                }
+
+                if (jarsValid)
+                {
+                    Logger.Log($"[AnalyzePomDependenciesByPom] 使用缓存: {cachedInfo.JarPaths.Count} 个 jar (POM + JAR MD5 校验通过)");
                     return new DependencyScanResult
                     {
                         ProjectRoot = workingDir,
@@ -201,6 +243,7 @@ public class MavenInspectorTools
             }
 
             var jarPaths = new List<string>();
+            var jarHashes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             var allComponentsCount = 0;
             var libraryComponentsCount = 0;
             var missingJarCount = 0;
@@ -245,6 +288,9 @@ public class MavenInspectorTools
                         if (File.Exists(fullPath))
                         {
                             jarPaths.Add(fullPath);
+                            // 计算JAR的MD5并记录到哈希表中
+                            var jarHash = ComputeFileHash(fullPath);
+                            jarHashes[fullPath] = jarHash;
                             Logger.Log($"[AnalyzePomDependenciesByPom] ✓ JAR 存在: {fullPath}");
                         }
                         else
@@ -265,7 +311,9 @@ public class MavenInspectorTools
             _cache[normalizedPomPath] = new CachedDependencyInfo
             {
                 LastModified = File.GetLastWriteTimeUtc(pomPath),
-                JarPaths = jarPaths
+                PomHash = currentPomHash,
+                JarPaths = jarPaths,
+                JarHashes = jarHashes
             };
             SaveCache();
 
@@ -278,6 +326,21 @@ public class MavenInspectorTools
         catch (Exception ex)
         {
             return new DependencyScanResult { Error = $"Exception running maven: {ex.Message}" };
+        }
+    }
+
+    private string ComputeFileHash(string filePath)
+    {
+        try
+        {
+            using var md5 = MD5.Create();
+            using var stream = File.OpenRead(filePath);
+            var hash = md5.ComputeHash(stream);
+            return BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+        }
+        catch
+        {
+            return string.Empty;
         }
     }
 
